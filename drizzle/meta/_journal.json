@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1788280565117,
+      "tag": "0000_dark_quasar",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788282728039,
+      "tag": "0001_personal_password_setup",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788285419712,
+      "tag": "0002_magical_sandman",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788287580477,
+      "tag": "0003_strong_sabra",
+      "breakpoints": true
+    }
+  ]
+}
