@@ -49,6 +49,7 @@ export const battleTicketOrders = sqliteTable("battle_ticket_orders", {
   totalAmount: integer("total_amount").notNull(),
   paymentStatus: text("payment_status").notNull(),
   purchasedAt: text("purchased_at").notNull(),
+  expiresAt: text("expires_at"),
 }, (table) => [
   uniqueIndex("idx_battle_ticket_orders_idempotency").on(table.idempotencyKey),
   index("idx_battle_ticket_orders_member").on(table.memberId, table.purchasedAt),

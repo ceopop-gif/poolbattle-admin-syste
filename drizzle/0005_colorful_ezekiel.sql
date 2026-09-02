@@ -1,0 +1,1 @@
+ALTER TABLE `battle_ticket_orders` ADD `expires_at` text;

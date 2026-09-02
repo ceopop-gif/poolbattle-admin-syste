@@ -1,4 +1,4 @@
-import { MINIMUM_BATTLE_GAMES, normalizePhone, type BattleTicketPurchaseResult } from "@/lib/member-access";
+import { MINIMUM_BATTLE_GAMES, getBattleTicketExpiresAt, normalizePhone, type BattleTicketPurchaseResult } from "@/lib/member-access";
 import { getBattleCreditSummary, getMemberStorage, type MemberRow, type PreparedStatement } from "@/lib/server/member-storage";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +17,7 @@ type BattleOrderRow = {
   total_amount: number;
   payment_status: "confirmed";
   purchased_at: string;
+  expires_at: string | null;
 };
 
 function orderPayload(order: BattleOrderRow): BattleTicketPurchaseResult["order"] {
@@ -27,6 +28,7 @@ function orderPayload(order: BattleOrderRow): BattleTicketPurchaseResult["order"
     totalAmount: order.total_amount,
     paymentStatus: order.payment_status,
     purchasedAt: order.purchased_at,
+    expiresAt: order.expires_at || getBattleTicketExpiresAt(new Date(order.purchased_at)).toISOString(),
   };
 }
 
@@ -57,7 +59,7 @@ export async function POST(request: Request) {
   if (!member) return Response.json({ error: "ไม่พบบัญชีสมาชิก กรุณาซื้อบัตรเข้าประตูก่อน" }, { status: 404 });
   if (member.status === "blocked") return Response.json({ error: "บัญชีสมาชิกถูกระงับ กรุณาติดต่อเจ้าหน้าที่" }, { status: 403 });
 
-  const duplicate = await db.prepare("SELECT id, member_id, games, price_per_game, total_amount, payment_status, purchased_at FROM battle_ticket_orders WHERE idempotency_key = ? LIMIT 1")
+  const duplicate = await db.prepare("SELECT id, member_id, games, price_per_game, total_amount, payment_status, purchased_at, expires_at FROM battle_ticket_orders WHERE idempotency_key = ? LIMIT 1")
     .bind(idempotencyKey).first<BattleOrderRow>();
   if (duplicate) {
     if (duplicate.member_id !== member.id) return Response.json({ error: "รหัสคำสั่งซื้อถูกใช้งานแล้ว" }, { status: 409 });
@@ -67,25 +69,26 @@ export async function POST(request: Request) {
   const creditsBefore = await getBattleCreditSummary(db, member.id);
   const orderId = crypto.randomUUID();
   const purchasedAt = new Date().toISOString();
+  const expiresAt = getBattleTicketExpiresAt(new Date(purchasedAt)).toISOString();
   const totalAmount = games * creditsBefore.pricePerGame;
   const statements: PreparedStatement[] = [
-    db.prepare("INSERT INTO battle_ticket_orders (id, idempotency_key, member_id, games, price_per_game, total_amount, payment_status, purchased_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(orderId, idempotencyKey, member.id, games, creditsBefore.pricePerGame, totalAmount, "confirmed", purchasedAt),
+    db.prepare("INSERT INTO battle_ticket_orders (id, idempotency_key, member_id, games, price_per_game, total_amount, payment_status, purchased_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(orderId, idempotencyKey, member.id, games, creditsBefore.pricePerGame, totalAmount, "confirmed", purchasedAt, expiresAt),
     db.prepare("INSERT INTO battle_game_credit_ledger (id, member_id, order_id, delta_games, entry_type, source_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .bind(crypto.randomUUID(), member.id, orderId, games, "purchase", `battle-ticket-order:${orderId}`, purchasedAt),
     db.prepare("INSERT INTO audit_events (id, actor_code, action, target_type, target_id, before_json, after_json, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), `MEMBER:${member.player_id}`, "battle_ticket.purchase", "battle_ticket_order", orderId, JSON.stringify(creditsBefore), JSON.stringify({ games, pricePerGame: creditsBefore.pricePerGame, totalAmount }), "สมาชิกซื้อเครดิตเกมแข่งขัน", purchasedAt),
+      .bind(crypto.randomUUID(), `MEMBER:${member.player_id}`, "battle_ticket.purchase", "battle_ticket_order", orderId, JSON.stringify(creditsBefore), JSON.stringify({ games, pricePerGame: creditsBefore.pricePerGame, totalAmount, expiresAt }), "สมาชิกซื้อเครดิตเกมแข่งขัน อายุ 30 วัน", purchasedAt),
   ];
 
   try {
     await db.batch(statements);
     const result: BattleTicketPurchaseResult = {
-      order: { id: orderId, games, pricePerGame: creditsBefore.pricePerGame, totalAmount, paymentStatus: "confirmed", purchasedAt },
+      order: { id: orderId, games, pricePerGame: creditsBefore.pricePerGame, totalAmount, paymentStatus: "confirmed", purchasedAt, expiresAt },
       credits: await getBattleCreditSummary(db, member.id),
     };
     return Response.json(result);
   } catch (error) {
-    const savedOrder = await db.prepare("SELECT id, member_id, games, price_per_game, total_amount, payment_status, purchased_at FROM battle_ticket_orders WHERE idempotency_key = ? LIMIT 1")
+    const savedOrder = await db.prepare("SELECT id, member_id, games, price_per_game, total_amount, payment_status, purchased_at, expires_at FROM battle_ticket_orders WHERE idempotency_key = ? LIMIT 1")
       .bind(idempotencyKey).first<BattleOrderRow>();
     if (savedOrder?.member_id === member.id) {
       return Response.json({ order: orderPayload(savedOrder), credits: await getBattleCreditSummary(db, member.id) } satisfies BattleTicketPurchaseResult);

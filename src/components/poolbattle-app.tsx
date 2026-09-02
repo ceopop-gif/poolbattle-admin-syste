@@ -61,7 +61,7 @@ type MemberNewsItem = { id: string; title: string; summary: string; publishedAt:
 const STORAGE_KEY = "poolbattle-player-state-v1";
 const DEFAULT_FEATURES: FeatureState = { queueJoined: false, competitionRegistered: false, battleReady: false };
 const DEFAULT_SETTINGS: SettingsState = { lineNotifications: true, sound: true, queueAlerts: true };
-const DEFAULT_BATTLE_CREDITS: BattleCreditSummary = { purchasedGames: 0, usedGames: 0, availableGames: 0, pricePerGame: BATTLE_GAME_PRICE };
+const DEFAULT_BATTLE_CREDITS: BattleCreditSummary = { purchasedGames: 0, usedGames: 0, availableGames: 0, expiredGames: 0, nextExpiryAt: null, nextExpiryGames: 0, pricePerGame: BATTLE_GAME_PRICE };
 
 function loadPersistedState(): PersistedState {
   if (typeof window === "undefined") {

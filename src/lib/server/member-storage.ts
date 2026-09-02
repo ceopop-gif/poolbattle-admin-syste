@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { BATTLE_GAME_PRICE, getBangkokPassPeriod, type BattleCreditSummary } from "@/lib/member-access";
+import { BATTLE_GAME_PRICE, getBangkokPassPeriod, getBattleTicketExpiresAt, type BattleCreditSummary } from "@/lib/member-access";
 
 export type MemberRow = {
   id: string;
@@ -82,7 +82,7 @@ export async function memberSessionPayload(db: DatabaseBinding, member: MemberRo
   const { startsAt, expiresAt } = getBangkokPassPeriod(at);
   const [dayPass, battleCredits] = await Promise.all([
     db.prepare("SELECT id, order_id, business_date, purchased_at, ticket_number, status, membership_created FROM day_passes WHERE member_id = ? AND purchased_at >= ? AND purchased_at < ? AND status = 'active' ORDER BY purchased_at DESC LIMIT 1").bind(member.id, startsAt.toISOString(), expiresAt.toISOString()).first<DayPassRow>(),
-    getBattleCreditSummary(db, member.id),
+    getBattleCreditSummary(db, member.id, at),
   ]);
   return {
     member: memberRowToClient(member),
@@ -101,20 +101,53 @@ export async function memberSessionPayload(db: DatabaseBinding, member: MemberRo
   };
 }
 
-export async function getBattleCreditSummary(db: DatabaseBinding, memberId: string): Promise<BattleCreditSummary> {
-  const [creditRow, priceRow] = await Promise.all([
-    db.prepare(`SELECT
-      COALESCE(SUM(CASE WHEN delta_games > 0 THEN delta_games ELSE 0 END), 0) AS purchased_games,
-      COALESCE(SUM(CASE WHEN delta_games < 0 THEN -delta_games ELSE 0 END), 0) AS used_games,
-      COALESCE(SUM(delta_games), 0) AS available_games
-      FROM battle_game_credit_ledger WHERE member_id = ?`).bind(memberId).first<{ purchased_games: number; used_games: number; available_games: number }>(),
+export async function getBattleCreditSummary(db: DatabaseBinding, memberId: string, at = new Date()): Promise<BattleCreditSummary> {
+  const [orderResult, priceRow] = await Promise.all([
+    db.prepare(`SELECT o.games, o.purchased_at, o.expires_at,
+      COALESCE(SUM(CASE WHEN l.delta_games < 0 THEN -l.delta_games ELSE 0 END), 0) AS used_games
+      FROM battle_ticket_orders o
+      LEFT JOIN battle_game_credit_ledger l ON l.order_id = o.id
+      WHERE o.member_id = ? AND o.payment_status = 'confirmed'
+      GROUP BY o.id, o.games, o.purchased_at, o.expires_at
+      ORDER BY o.purchased_at ASC`).bind(memberId).all<{ games: number; purchased_at: string; expires_at: string | null; used_games: number }>(),
     db.prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'battle_game_price' LIMIT 1").first<{ setting_value: string }>(),
   ]);
   const configuredPrice = Number.parseInt(priceRow?.setting_value ?? "", 10);
+  let purchasedGames = 0;
+  let usedGames = 0;
+  let availableGames = 0;
+  let expiredGames = 0;
+  let nextExpiryAt: string | null = null;
+  let nextExpiryGames = 0;
+
+  for (const row of orderResult.results) {
+    const games = Math.max(0, Number(row.games));
+    const used = Math.min(games, Math.max(0, Number(row.used_games)));
+    const remaining = games - used;
+    const fallbackExpiry = getBattleTicketExpiresAt(new Date(row.purchased_at)).toISOString();
+    const expiresAt = row.expires_at || fallbackExpiry;
+    if (new Date(expiresAt).getTime() <= at.getTime()) {
+      expiredGames += remaining;
+      continue;
+    }
+    purchasedGames += games;
+    usedGames += used;
+    availableGames += remaining;
+    if (remaining > 0 && (!nextExpiryAt || expiresAt < nextExpiryAt)) {
+      nextExpiryAt = expiresAt;
+      nextExpiryGames = remaining;
+    } else if (remaining > 0 && expiresAt === nextExpiryAt) {
+      nextExpiryGames += remaining;
+    }
+  }
+
   return {
-    purchasedGames: Number(creditRow?.purchased_games ?? 0),
-    usedGames: Number(creditRow?.used_games ?? 0),
-    availableGames: Math.max(0, Number(creditRow?.available_games ?? 0)),
+    purchasedGames,
+    usedGames,
+    availableGames,
+    expiredGames,
+    nextExpiryAt,
+    nextExpiryGames,
     pricePerGame: configuredPrice > 0 ? configuredPrice : BATTLE_GAME_PRICE,
   };
 }

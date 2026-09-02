@@ -436,6 +436,10 @@ button:focus-visible { outline: 3px solid rgba(255, 217, 114, 0.9); outline-offs
 .battle-empty-note { color: #f2d682; background: rgba(222,174,59,.09); border: 1px solid rgba(232,190,80,.22); }
 .battle-ready-note { color: #bcebd2; background: rgba(54,196,123,.09); border: 1px solid rgba(75,216,143,.21); }
 .battle-empty-note svg, .battle-ready-note svg { flex: 0 0 auto; }
+.battle-expiry-note { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 9px; padding: 11px 12px; color: #eccb70; background: rgba(0,0,0,.16); border: 1px solid rgba(235,194,91,.18); border-radius: 13px; }
+.battle-expiry-note > span { display: grid; gap: 2px; }
+.battle-expiry-note strong { color: #f6e7b2; font-size: 13px; }
+.battle-expiry-note small { color: #9cafA5; font-size: 12px; }
 .battle-purchase-panel { display: grid; gap: 10px; padding-top: 2px; }
 .battle-purchase-label { display: flex; align-items: end; justify-content: space-between; gap: 10px; }
 .battle-purchase-label span { color: #d9e5df; font-size: 14px; font-weight: 800; }

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { MemberQrCode } from "@/components/member-qr-code";
 import { EVENTS } from "@/lib/poolbattle-data";
 import type { MainFeatureId, MenuItem } from "@/lib/poolbattle-data";
-import { MINIMUM_BATTLE_GAMES, formatThaiDayPassExpiry, getThaiDoorDate, type BattleCreditSummary, type BattleTicketPurchaseResult, type DayPassTicket, type PoolBattleMember } from "@/lib/member-access";
+import { BATTLE_GAME_VALIDITY_DAYS, MINIMUM_BATTLE_GAMES, formatThaiBattleTicketExpiry, formatThaiDayPassExpiry, getThaiDoorDate, type BattleCreditSummary, type BattleTicketPurchaseResult, type DayPassTicket, type PoolBattleMember } from "@/lib/member-access";
 import {
   BellRing,
   CalendarDays,
@@ -71,10 +71,11 @@ function BattleTicketCard({ credits, onPurchase }: { credits: BattleCreditSummar
         <em>{credits.pricePerGame.toLocaleString("th-TH")} บาท/เกม</em>
       </header>
       <div className="battle-credit-summary">
-        <div><span>ซื้อแล้วทั้งหมด</span><strong>{credits.purchasedGames}</strong><small>เกม</small></div>
+        <div><span>บัตรที่ยังมีอายุ</span><strong>{credits.purchasedGames}</strong><small>เกม</small></div>
         <div className="available"><span>เกมพร้อมใช้</span><strong>{credits.availableGames}</strong><small>เกม</small></div>
       </div>
-      {credits.purchasedGames === 0 ? <p className="battle-empty-note"><TicketCheck size={18} /> ยังไม่ได้ซื้อบัตรแข่งขัน เลือกจำนวนและซื้อได้ทันที</p> : <p className="battle-ready-note"><CheckCircle2 size={18} /> มีบัตรแข่งขันพร้อมใช้งาน {credits.availableGames} เกม</p>}
+      {credits.purchasedGames === 0 ? <p className="battle-empty-note"><TicketCheck size={18} /> {credits.expiredGames > 0 ? "บัตรเดิมหมดอายุแล้ว เลือกจำนวนและซื้อใหม่ได้ทันที" : "ยังไม่ได้ซื้อบัตรแข่งขัน เลือกจำนวนและซื้อได้ทันที"}</p> : <p className="battle-ready-note"><CheckCircle2 size={18} /> มีบัตรแข่งขันพร้อมใช้งาน {credits.availableGames} เกม</p>}
+      {credits.nextExpiryAt ? <div className="battle-expiry-note"><Clock3 size={19} /><span><strong>ใช้ได้ถึง {formatThaiBattleTicketExpiry(credits.nextExpiryAt)} น.</strong><small>{credits.nextExpiryGames} เกมชุดใกล้หมดอายุ • อายุบัตร {BATTLE_GAME_VALIDITY_DAYS} วัน</small></span></div> : null}
       <div className="battle-purchase-panel">
         <div className="battle-purchase-label"><span>จำนวนเกมที่ต้องการซื้อ</span><small>ขั้นต่ำ {MINIMUM_BATTLE_GAMES} เกม</small></div>
         <div className="battle-game-stepper">
@@ -88,7 +89,7 @@ function BattleTicketCard({ credits, onPurchase }: { credits: BattleCreditSummar
         <button className="primary-action battle-buy-button" type="button" onClick={handlePurchase} disabled={isSubmitting}>
           {isSubmitting ? <><LoaderCircle className="spin" size={20} /> กำลังซื้อบัตร...</> : <>ซื้อ {games} เกม • {totalAmount.toLocaleString("th-TH")} บาท</>}
         </button>
-        <small className="battle-purchase-helper">ระบบจะเพิ่มจำนวนเกมเข้าบัญชีสมาชิกทันที</small>
+        <small className="battle-purchase-helper">ระบบจะเพิ่มเกมทันที และบัตรแต่ละชุดเก็บไว้ใช้ได้ {BATTLE_GAME_VALIDITY_DAYS} วัน</small>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
       </div>
     </section>

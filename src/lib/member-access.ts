@@ -2,6 +2,7 @@ export const MEMBER_ACCESS_STORAGE_KEY = "poolbattle-member-access-v2";
 export const DAY_PASS_PRICE = 150;
 export const BATTLE_GAME_PRICE = 100;
 export const MINIMUM_BATTLE_GAMES = 5;
+export const BATTLE_GAME_VALIDITY_DAYS = 30;
 export const DAY_PASS_CUTOFF_HOUR = 17;
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -42,6 +43,9 @@ export type BattleCreditSummary = {
   purchasedGames: number;
   usedGames: number;
   availableGames: number;
+  expiredGames: number;
+  nextExpiryAt: string | null;
+  nextExpiryGames: number;
   pricePerGame: number;
 };
 
@@ -53,6 +57,7 @@ export type BattleTicketPurchaseResult = {
     totalAmount: number;
     paymentStatus: "confirmed";
     purchasedAt: string;
+    expiresAt: string;
   };
   credits: BattleCreditSummary;
 };
@@ -83,6 +88,22 @@ export const DEFAULT_MEMBER_ACCESS_STATE: MemberAccessState = {
 
 export function normalizePhone(value: string) {
   return value.replace(/\D/g, "").slice(0, 10);
+}
+
+export function getBattleTicketExpiresAt(purchasedAt = new Date()) {
+  return new Date(purchasedAt.getTime() + BATTLE_GAME_VALIDITY_DAYS * DAY_IN_MS);
+}
+
+export function formatThaiBattleTicketExpiry(value: string | Date) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  return new Intl.DateTimeFormat("th-TH", {
+    timeZone: "Asia/Bangkok",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 export function isValidThaiMobile(value: string) {
