@@ -34,6 +34,7 @@ import { LoginScreen, MemberProfileSheet, TicketPurchaseSheet } from "@/componen
 import { MenuCard } from "@/components/menu-card";
 import { useUiSound } from "@/hooks/use-ui-sound";
 import {
+  BATTLE_GAME_PRICE,
   MEMBER_ACCESS_STORAGE_KEY,
   formatThaiDayPassExpiry,
   getBangkokBusinessDate,
@@ -42,6 +43,8 @@ import {
   isDayPassActive,
   loadMemberAccessState,
   normalizePhone,
+  type BattleCreditSummary,
+  type BattleTicketPurchaseResult,
   type DayPassTicket,
   type MemberAccessState,
   type PoolBattleMember,
@@ -52,12 +55,13 @@ import { LEADERBOARD, MAIN_MENU, RECENT_MATCHES, type BottomTabId, type MenuItem
 
 type SettingsState = { lineNotifications: boolean; sound: boolean; queueAlerts: boolean };
 type PersistedState = { version: 1; features: FeatureState; settings: SettingsState };
-type MemberSessionPayload = { error?: string; step?: string; member?: PoolBattleMember; tickets?: DayPassTicket[] };
+type MemberSessionPayload = { error?: string; step?: string; member?: PoolBattleMember; tickets?: DayPassTicket[]; battleCredits?: BattleCreditSummary };
 type MemberNewsItem = { id: string; title: string; summary: string; publishedAt: string };
 
 const STORAGE_KEY = "poolbattle-player-state-v1";
 const DEFAULT_FEATURES: FeatureState = { queueJoined: false, competitionRegistered: false, battleReady: false };
 const DEFAULT_SETTINGS: SettingsState = { lineNotifications: true, sound: true, queueAlerts: true };
+const DEFAULT_BATTLE_CREDITS: BattleCreditSummary = { purchasedGames: 0, usedGames: 0, availableGames: 0, pricePerGame: BATTLE_GAME_PRICE };
 
 function loadPersistedState(): PersistedState {
   if (typeof window === "undefined") {
@@ -216,6 +220,7 @@ export function PoolBattleApp() {
   const [toast, setToast] = useState<string | null>(null);
   const [passClock, setPassClock] = useState(() => Date.now());
   const [news, setNews] = useState<MemberNewsItem[]>([]);
+  const [battleCredits, setBattleCredits] = useState<BattleCreditSummary>(DEFAULT_BATTLE_CREDITS);
   const previousBusinessDateRef = useRef(getBangkokBusinessDate(new Date(passClock)));
   const { playTap, playSuccess } = useUiSound(settings.sound);
   const currentMember = memberAccess.members.find((member) => member.phone === memberAccess.sessionPhone) ?? null;
@@ -241,6 +246,16 @@ export function PoolBattleApp() {
       .catch(() => undefined);
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!currentMember) return;
+    let active = true;
+    fetch(`/api/member-access/battle-tickets?phone=${encodeURIComponent(currentMember.phone)}`, { cache: "no-store" })
+      .then((response) => response.ok ? response.json() as Promise<{ credits?: BattleCreditSummary }> : null)
+      .then((payload) => { if (active && payload?.credits) setBattleCredits(payload.credits); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [currentMember]);
 
   useEffect(() => {
     if (!toast) return;
@@ -302,6 +317,7 @@ export function PoolBattleApp() {
       members: [...current.members.filter((candidate) => candidate.phone !== phone), payload.member!],
       tickets: [...current.tickets.filter((ticket) => ticket.phone !== phone), ...(payload.tickets ?? [])],
     }));
+    setBattleCredits(payload.battleCredits ?? DEFAULT_BATTLE_CREDITS);
     setLoginPhone(phone);
     setActiveTab("home");
     setToast(message);
@@ -366,6 +382,21 @@ export function PoolBattleApp() {
     return result;
   }
 
+  async function handleBattleTicketPurchase(games: number): Promise<BattleTicketPurchaseResult> {
+    if (!currentMember) throw new Error("ไม่พบบัญชีสมาชิก");
+    const response = await fetch("/api/member-access/battle-tickets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: currentMember.phone, games, idempotencyKey: crypto.randomUUID() }),
+    });
+    const result = await response.json() as BattleTicketPurchaseResult & { error?: string };
+    if (!response.ok) throw new Error(result.error ?? "ไม่สามารถซื้อบัตรแข่งขันได้ กรุณาลองอีกครั้ง");
+    setBattleCredits(result.credits);
+    playSuccess();
+    setToast(`ซื้อบัตรแข่งขัน ${result.order.games} เกมเรียบร้อย`);
+    return result;
+  }
+
   async function handleProfilePhotoUpdate(photo: Blob, password: string) {
     if (!currentMember) return "ไม่พบบัญชีสมาชิก";
     const formData = new FormData();
@@ -411,7 +442,7 @@ export function PoolBattleApp() {
         {currentMember ? <div className="screen-content" data-tab={activeTab} key={activeTab}>{screen}</div> : <LoginScreen key={loginPhone || "member-login"} initialPhone={loginPhone} onCheckPhone={handleCheckPhone} onLogin={handleLogin} onSetPassword={handleSetPassword} onBuy={() => setTicketSheetOpen(true)} />}
         {currentMember ? <BottomNav activeTab={activeTab} onChange={setActiveTab} /> : null}
       </main>
-      {openItem && currentMember ? <FeatureSheet item={openItem} state={features} member={currentMember} dayPass={memberPass} onClose={() => setOpenItem(null)} onAction={handleFeatureAction} /> : null}
+      {openItem && currentMember ? <FeatureSheet item={openItem} state={features} member={currentMember} dayPass={memberPass} battleCredits={battleCredits} onClose={() => setOpenItem(null)} onPurchaseBattleGames={handleBattleTicketPurchase} onAction={handleFeatureAction} /> : null}
       {ticketSheetOpen ? <TicketPurchaseSheet members={memberAccess.members} currentTime={passClock} onClose={() => setTicketSheetOpen(false)} onPurchase={handleTicketPurchase} onUseMember={handleUseMember} /> : null}
       {profileSheetOpen && currentMember ? <MemberProfileSheet member={currentMember} onClose={() => setProfileSheetOpen(false)} onSave={handleProfilePhotoUpdate} /> : null}
       {toast ? <div className="toast" role="status"><CheckCircle2 size={19} />{toast}</div> : null}

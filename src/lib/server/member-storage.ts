@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { getBangkokPassPeriod } from "@/lib/member-access";
+import { BATTLE_GAME_PRICE, getBangkokPassPeriod, type BattleCreditSummary } from "@/lib/member-access";
 
 export type MemberRow = {
   id: string;
@@ -80,7 +80,10 @@ type DayPassRow = {
 
 export async function memberSessionPayload(db: DatabaseBinding, member: MemberRow, at = new Date()) {
   const { startsAt, expiresAt } = getBangkokPassPeriod(at);
-  const dayPass = await db.prepare("SELECT id, order_id, business_date, purchased_at, ticket_number, status, membership_created FROM day_passes WHERE member_id = ? AND purchased_at >= ? AND purchased_at < ? AND status = 'active' ORDER BY purchased_at DESC LIMIT 1").bind(member.id, startsAt.toISOString(), expiresAt.toISOString()).first<DayPassRow>();
+  const [dayPass, battleCredits] = await Promise.all([
+    db.prepare("SELECT id, order_id, business_date, purchased_at, ticket_number, status, membership_created FROM day_passes WHERE member_id = ? AND purchased_at >= ? AND purchased_at < ? AND status = 'active' ORDER BY purchased_at DESC LIMIT 1").bind(member.id, startsAt.toISOString(), expiresAt.toISOString()).first<DayPassRow>(),
+    getBattleCreditSummary(db, member.id),
+  ]);
   return {
     member: memberRowToClient(member),
     tickets: dayPass ? [{
@@ -94,5 +97,24 @@ export async function memberSessionPayload(db: DatabaseBinding, member: MemberRo
       status: dayPass.status,
       membershipCreated: Boolean(dayPass.membership_created),
     }] : [],
+    battleCredits,
+  };
+}
+
+export async function getBattleCreditSummary(db: DatabaseBinding, memberId: string): Promise<BattleCreditSummary> {
+  const [creditRow, priceRow] = await Promise.all([
+    db.prepare(`SELECT
+      COALESCE(SUM(CASE WHEN delta_games > 0 THEN delta_games ELSE 0 END), 0) AS purchased_games,
+      COALESCE(SUM(CASE WHEN delta_games < 0 THEN -delta_games ELSE 0 END), 0) AS used_games,
+      COALESCE(SUM(delta_games), 0) AS available_games
+      FROM battle_game_credit_ledger WHERE member_id = ?`).bind(memberId).first<{ purchased_games: number; used_games: number; available_games: number }>(),
+    db.prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'battle_game_price' LIMIT 1").first<{ setting_value: string }>(),
+  ]);
+  const configuredPrice = Number.parseInt(priceRow?.setting_value ?? "", 10);
+  return {
+    purchasedGames: Number(creditRow?.purchased_games ?? 0),
+    usedGames: Number(creditRow?.used_games ?? 0),
+    availableGames: Math.max(0, Number(creditRow?.available_games ?? 0)),
+    pricePerGame: configuredPrice > 0 ? configuredPrice : BATTLE_GAME_PRICE,
   };
 }

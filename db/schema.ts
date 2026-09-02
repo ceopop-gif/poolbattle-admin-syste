@@ -40,6 +40,33 @@ export const dayPasses = sqliteTable("day_passes", {
   index("idx_day_passes_member_date").on(table.memberId, table.businessDate),
 ]);
 
+export const battleTicketOrders = sqliteTable("battle_ticket_orders", {
+  id: text("id").primaryKey(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  memberId: text("member_id").notNull().references(() => members.id),
+  games: integer("games").notNull(),
+  pricePerGame: integer("price_per_game").notNull(),
+  totalAmount: integer("total_amount").notNull(),
+  paymentStatus: text("payment_status").notNull(),
+  purchasedAt: text("purchased_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_battle_ticket_orders_idempotency").on(table.idempotencyKey),
+  index("idx_battle_ticket_orders_member").on(table.memberId, table.purchasedAt),
+]);
+
+export const battleGameCreditLedger = sqliteTable("battle_game_credit_ledger", {
+  id: text("id").primaryKey(),
+  memberId: text("member_id").notNull().references(() => members.id),
+  orderId: text("order_id").references(() => battleTicketOrders.id),
+  deltaGames: integer("delta_games").notNull(),
+  entryType: text("entry_type").notNull(),
+  sourceRef: text("source_ref").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_battle_game_credit_source").on(table.sourceRef),
+  index("idx_battle_game_credit_member").on(table.memberId, table.createdAt),
+]);
+
 export const competitionResultSubmissions = sqliteTable("competition_result_submissions", {
   id: text("id").primaryKey(),
   idempotencyKey: text("idempotency_key").notNull(),

@@ -1,8 +1,11 @@
+"use client";
+
 import Image from "next/image";
+import { useState } from "react";
 import { MemberQrCode } from "@/components/member-qr-code";
 import { EVENTS } from "@/lib/poolbattle-data";
 import type { MainFeatureId, MenuItem } from "@/lib/poolbattle-data";
-import { formatThaiDayPassExpiry, getThaiDoorDate, type DayPassTicket, type PoolBattleMember } from "@/lib/member-access";
+import { MINIMUM_BATTLE_GAMES, formatThaiDayPassExpiry, getThaiDoorDate, type BattleCreditSummary, type BattleTicketPurchaseResult, type DayPassTicket, type PoolBattleMember } from "@/lib/member-access";
 import {
   BellRing,
   CalendarDays,
@@ -12,10 +15,14 @@ import {
   Clock3,
   MapPin,
   MessageCircleMore,
+  Minus,
+  LoaderCircle,
+  Plus,
   ShieldCheck,
   Sparkles,
   Swords,
   TicketCheck,
+  Trophy,
   UserRoundCheck,
   UsersRound,
   X,
@@ -32,11 +39,63 @@ type FeatureSheetProps = {
   state: FeatureState;
   member: PoolBattleMember;
   dayPass: DayPassTicket | null;
+  battleCredits: BattleCreditSummary;
   onClose: () => void;
+  onPurchaseBattleGames: (games: number) => Promise<BattleTicketPurchaseResult>;
   onAction: (action: "queue" | "register" | "ready" | "notify", message: string) => void;
 };
 
-function GatePass({ member, dayPass }: { member: PoolBattleMember; dayPass: DayPassTicket | null }) {
+function BattleTicketCard({ credits, onPurchase }: { credits: BattleCreditSummary; onPurchase: FeatureSheetProps["onPurchaseBattleGames"] }) {
+  const [games, setGames] = useState(MINIMUM_BATTLE_GAMES);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const totalAmount = games * credits.pricePerGame;
+
+  async function handlePurchase() {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onPurchase(games);
+    } catch (purchaseError) {
+      setError(purchaseError instanceof Error ? purchaseError.message : "ไม่สามารถซื้อบัตรแข่งขันได้ กรุณาลองอีกครั้ง");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <section className={`battle-credit-card ${credits.purchasedGames > 0 ? "has-credit" : "no-credit"}`} aria-label="บัตรแข่งขัน">
+      <header className="battle-credit-header">
+        <span><Trophy size={22} /></span>
+        <div><small>BATTLE GAME CREDIT</small><strong>บัตรแข่งขัน</strong></div>
+        <em>{credits.pricePerGame.toLocaleString("th-TH")} บาท/เกม</em>
+      </header>
+      <div className="battle-credit-summary">
+        <div><span>ซื้อแล้วทั้งหมด</span><strong>{credits.purchasedGames}</strong><small>เกม</small></div>
+        <div className="available"><span>เกมพร้อมใช้</span><strong>{credits.availableGames}</strong><small>เกม</small></div>
+      </div>
+      {credits.purchasedGames === 0 ? <p className="battle-empty-note"><TicketCheck size={18} /> ยังไม่ได้ซื้อบัตรแข่งขัน เลือกจำนวนและซื้อได้ทันที</p> : <p className="battle-ready-note"><CheckCircle2 size={18} /> มีบัตรแข่งขันพร้อมใช้งาน {credits.availableGames} เกม</p>}
+      <div className="battle-purchase-panel">
+        <div className="battle-purchase-label"><span>จำนวนเกมที่ต้องการซื้อ</span><small>ขั้นต่ำ {MINIMUM_BATTLE_GAMES} เกม</small></div>
+        <div className="battle-game-stepper">
+          <button type="button" onClick={() => setGames((value) => Math.max(MINIMUM_BATTLE_GAMES, value - 1))} disabled={games <= MINIMUM_BATTLE_GAMES || isSubmitting} aria-label="ลดจำนวนเกม"><Minus size={20} /></button>
+          <strong>{games}<small>เกม</small></strong>
+          <button type="button" onClick={() => setGames((value) => Math.min(100, value + 1))} disabled={games >= 100 || isSubmitting} aria-label="เพิ่มจำนวนเกม"><Plus size={20} /></button>
+        </div>
+        <div className="battle-game-presets" aria-label="เลือกจำนวนเกมด่วน">
+          {[5, 10, 20].map((amount) => <button type="button" className={games === amount ? "selected" : ""} onClick={() => setGames(amount)} disabled={isSubmitting} key={amount}>{amount} เกม</button>)}
+        </div>
+        <button className="primary-action battle-buy-button" type="button" onClick={handlePurchase} disabled={isSubmitting}>
+          {isSubmitting ? <><LoaderCircle className="spin" size={20} /> กำลังซื้อบัตร...</> : <>ซื้อ {games} เกม • {totalAmount.toLocaleString("th-TH")} บาท</>}
+        </button>
+        <small className="battle-purchase-helper">ระบบจะเพิ่มจำนวนเกมเข้าบัญชีสมาชิกทันที</small>
+        {error ? <p className="form-error" role="alert">{error}</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function GatePass({ member, dayPass, battleCredits, onPurchaseBattleGames }: { member: PoolBattleMember; dayPass: DayPassTicket | null; battleCredits: BattleCreditSummary; onPurchaseBattleGames: FeatureSheetProps["onPurchaseBattleGames"] }) {
   const initials = member.displayName.replace("ดร.", "").trim().charAt(0) || "P";
   const doorDate = getThaiDoorDate();
   const memberScanUrl = `https://poolbattle-member-system.bbb78987.chatgpt.site/staff/result?player=${encodeURIComponent(member.playerId)}`;
@@ -52,6 +111,7 @@ function GatePass({ member, dayPass }: { member: PoolBattleMember; dayPass: DayP
         {dayPass ? <div className="door-access-granted"><ShieldCheck size={24} /><span><strong>มีสิทธิ์เข้าประตู</strong><small>ใช้ได้ถึง {formatThaiDayPassExpiry(new Date(dayPass.purchasedAt))}</small></span><CheckCircle2 size={22} /></div> : null}
         <div className="pass-meta"><span><MapPin size={15} /> POOL BATTLE ARENA</span>{dayPass ? <span><TicketCheck size={15} /> {dayPass.ticketNumber}</span> : null}</div>
       </div>
+      <BattleTicketCard credits={battleCredits} onPurchase={onPurchaseBattleGames} />
       <div className={`info-banner ${dayPass ? "success" : "pending"}`}>{dayPass ? <CheckCircle2 size={20} /> : <TicketCheck size={20} />}<div><strong>{dayPass ? "บัตรรอบนี้พร้อมใช้งาน" : "ต้องซื้อบัตรรอบใหม่"}</strong><span>{dayPass ? "เมื่อถึง 17:00 น. บัตรจะหมดอายุและต้องซื้อใหม่" : "QR ระบุตัวตนยังใช้ได้ แต่ไม่มีสิทธิ์เข้าประตูจนกว่าจะซื้อบัตร"}</span></div></div>
     </div>
   );
@@ -140,9 +200,9 @@ function Margie({ onQuickAction }: { onQuickAction: (message: string) => void })
   );
 }
 
-function SheetContent({ id, state, member, dayPass, onAction }: { id: MainFeatureId; state: FeatureState; member: PoolBattleMember; dayPass: DayPassTicket | null; onAction: FeatureSheetProps["onAction"] }) {
+function SheetContent({ id, state, member, dayPass, battleCredits, onPurchaseBattleGames, onAction }: { id: MainFeatureId; state: FeatureState; member: PoolBattleMember; dayPass: DayPassTicket | null; battleCredits: BattleCreditSummary; onPurchaseBattleGames: FeatureSheetProps["onPurchaseBattleGames"]; onAction: FeatureSheetProps["onAction"] }) {
   switch (id) {
-    case "gate-pass": return <GatePass member={member} dayPass={dayPass} />;
+    case "gate-pass": return <GatePass member={member} dayPass={dayPass} battleCredits={battleCredits} onPurchaseBattleGames={onPurchaseBattleGames} />;
     case "daily-pass": return <DailyPass registered={state.competitionRegistered} onRegister={() => onAction("register", "สมัคร 8-Ball Daily Battle เรียบร้อยแล้ว")} />;
     case "free-queue": return <FreeQueue joined={state.queueJoined} onToggle={() => onAction("queue", state.queueJoined ? "ยกเลิกคิวแล้ว" : "รับคิวเล่นฟรีเรียบร้อย คิวที่ 3")} />;
     case "battle-queue": return <BattleQueue ready={state.battleReady} onReady={() => onAction("ready", "ยืนยันพร้อมแข่งเรียบร้อยแล้ว")} />;
@@ -151,14 +211,14 @@ function SheetContent({ id, state, member, dayPass, onAction }: { id: MainFeatur
   }
 }
 
-export function FeatureSheet({ item, state, member, dayPass, onClose, onAction }: FeatureSheetProps) {
+export function FeatureSheet({ item, state, member, dayPass, battleCredits, onClose, onPurchaseBattleGames, onAction }: FeatureSheetProps) {
   return (
     <div className="sheet-layer" role="presentation">
       <button className="sheet-backdrop" type="button" onClick={onClose} aria-label="ปิดหน้าต่าง" />
       <section className="feature-sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
         <div className="sheet-handle" aria-hidden="true" />
         <header className="sheet-header"><div><span>เมนู {item.number}</span><h2 id="sheet-title">{item.title}</h2></div><button type="button" onClick={onClose} aria-label="ปิด"><X size={22} /></button></header>
-        <div className="sheet-body"><SheetContent id={item.id} state={state} member={member} dayPass={dayPass} onAction={onAction} /></div>
+        <div className="sheet-body"><SheetContent id={item.id} state={state} member={member} dayPass={dayPass} battleCredits={battleCredits} onPurchaseBattleGames={onPurchaseBattleGames} onAction={onAction} /></div>
       </section>
     </div>
   );

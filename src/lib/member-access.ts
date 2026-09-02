@@ -1,5 +1,7 @@
 export const MEMBER_ACCESS_STORAGE_KEY = "poolbattle-member-access-v2";
 export const DAY_PASS_PRICE = 150;
+export const BATTLE_GAME_PRICE = 100;
+export const MINIMUM_BATTLE_GAMES = 5;
 export const DAY_PASS_CUTOFF_HOUR = 17;
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -34,6 +36,25 @@ export type TicketOrder = {
   quantity: number;
   totalAmount: number;
   ticketIds: string[];
+};
+
+export type BattleCreditSummary = {
+  purchasedGames: number;
+  usedGames: number;
+  availableGames: number;
+  pricePerGame: number;
+};
+
+export type BattleTicketPurchaseResult = {
+  order: {
+    id: string;
+    games: number;
+    pricePerGame: number;
+    totalAmount: number;
+    paymentStatus: "confirmed";
+    purchasedAt: string;
+  };
+  credits: BattleCreditSummary;
 };
 
 export type MemberAccessState = {

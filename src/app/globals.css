@@ -416,6 +416,41 @@ button:focus-visible { outline: 3px solid rgba(255, 217, 114, 0.9); outline-offs
 .info-banner > div { display: grid; }
 .info-banner strong { font-size: 12px; }
 .info-banner span { color: #84a396; font-size: 10px; }
+.battle-credit-card { display: grid; gap: 14px; padding: 16px; background: radial-gradient(circle at 100% 0, rgba(229,184,74,.16), transparent 34%), linear-gradient(145deg, rgba(13,59,41,.98), rgba(4,25,17,.99)); border: 1px solid rgba(235,194,91,.32); border-radius: 21px; box-shadow: 0 16px 34px rgba(0,0,0,.25); }
+.battle-credit-card.no-credit { border-color: rgba(235,194,91,.48); }
+.battle-credit-card.has-credit { border-color: rgba(75,218,145,.35); }
+.battle-credit-header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+.battle-credit-header > span { display: grid; place-items: center; width: 43px; height: 43px; color: #231803; background: linear-gradient(145deg, #ffe99b, #c68a20); border-radius: 13px; box-shadow: 0 8px 20px rgba(0,0,0,.24); }
+.battle-credit-header > div { display: grid; }
+.battle-credit-header small { color: #b79442; font-size: 9px; font-weight: 900; letter-spacing: .1em; }
+.battle-credit-header strong { color: #fff1be; font-size: 18px; }
+.battle-credit-header em { padding: 6px 8px; color: #f3d77e; background: rgba(225,180,69,.1); border: 1px solid rgba(231,189,82,.22); border-radius: 99px; font-size: 11px; font-style: normal; font-weight: 800; white-space: nowrap; }
+.battle-credit-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+.battle-credit-summary > div { display: grid; justify-items: center; min-width: 0; padding: 11px 5px; text-align: center; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.07); border-radius: 14px; }
+.battle-credit-summary > div.available { background: rgba(57,202,128,.09); border-color: rgba(75,220,146,.24); }
+.battle-credit-summary span { color: #8da69a; font-size: 10px; line-height: 1.3; }
+.battle-credit-summary strong { color: #f7dda0; font-size: 30px; line-height: 1.15; }
+.battle-credit-summary .available strong { color: #65e3a4; }
+.battle-credit-summary small { color: #92a69c; font-size: 10px; }
+.battle-empty-note, .battle-ready-note { display: flex; align-items: center; gap: 8px; margin: 0; padding: 11px 12px; border-radius: 13px; font-size: 13px; line-height: 1.45; }
+.battle-empty-note { color: #f2d682; background: rgba(222,174,59,.09); border: 1px solid rgba(232,190,80,.22); }
+.battle-ready-note { color: #bcebd2; background: rgba(54,196,123,.09); border: 1px solid rgba(75,216,143,.21); }
+.battle-empty-note svg, .battle-ready-note svg { flex: 0 0 auto; }
+.battle-purchase-panel { display: grid; gap: 10px; padding-top: 2px; }
+.battle-purchase-label { display: flex; align-items: end; justify-content: space-between; gap: 10px; }
+.battle-purchase-label span { color: #d9e5df; font-size: 14px; font-weight: 800; }
+.battle-purchase-label small { color: #d7b859; font-size: 11px; }
+.battle-game-stepper { display: grid; grid-template-columns: 52px 1fr 52px; align-items: center; min-height: 60px; overflow: hidden; background: rgba(0,0,0,.2); border: 1px solid rgba(236,193,86,.22); border-radius: 15px; }
+.battle-game-stepper > button { display: grid; place-items: center; width: 100%; height: 60px; color: #f1cb69; background: rgba(255,255,255,.035); border: 0; cursor: pointer; }
+.battle-game-stepper > button:disabled { color: #52675d; cursor: default; }
+.battle-game-stepper > strong { display: flex; align-items: baseline; justify-content: center; gap: 7px; color: #fff1bf; font-size: 31px; }
+.battle-game-stepper > strong small { color: #9cafA5; font-size: 13px; }
+.battle-game-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.battle-game-presets > button { min-height: 44px; color: #b8c8c0; background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; font-size: 13px; font-weight: 800; cursor: pointer; }
+.battle-game-presets > button.selected { color: #261a03; background: linear-gradient(145deg, #ffe79a, #d39b31); border-color: transparent; }
+.battle-buy-button { min-height: 56px; font-size: 15px; }
+.battle-purchase-helper { color: #7f978b; text-align: center; font-size: 11px; }
+.battle-purchase-panel .form-error { margin: 0; font-size: 12px; }
 .event-hero { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 14px; padding: 17px; background: linear-gradient(130deg, rgba(118, 81, 18, .38), rgba(8, 33, 23, .95)); border: 1px solid rgba(233, 188, 79, .32); border-radius: 20px; }
 .event-ball { display: grid; place-items: center; width: 67px; height: 67px; color: #111; background: radial-gradient(circle at 35% 28%, #fff 0 18%, #dcdcdc 19% 31%, #050505 33%); border: 2px solid #7d7d7d; border-radius: 50%; box-shadow: 0 9px 22px rgba(0,0,0,.38); font: 800 25px/1 Arial; }
 .event-hero h3, .margie-profile h3 { margin: 2px 0; font-size: 18px; }
