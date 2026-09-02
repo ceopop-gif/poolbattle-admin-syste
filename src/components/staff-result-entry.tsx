@@ -5,7 +5,18 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, IdCard, LoaderCircle, LockKeyhole, ShieldCheck, Swords, Trophy, UserRoundCheck } from "lucide-react";
 
-type ScannedMember = { displayName: string; playerId: string; photoUrl: string };
+type ScannedMember = {
+  displayName: string;
+  playerId: string;
+  photoUrl: string;
+  currentMatch: {
+    tableId: string;
+    tableLabel: string;
+    discipline: "8-ball" | "9-ball";
+    opponentPlayerId: string;
+    opponentDisplayName: string;
+  } | null;
+};
 type ResultSubmission = {
   id: string;
   playerId: string;
@@ -44,7 +55,13 @@ export function StaffResultEntry({ playerId }: { playerId: string }) {
         const response = await fetch(`/api/staff/result?player=${encodeURIComponent(playerId)}`, { signal: controller.signal });
         const payload = await response.json() as { member?: ScannedMember; error?: string };
         if (!response.ok || !payload.member) setLookupError(payload.error ?? "ไม่พบสมาชิกจาก QR นี้");
-        else setMember(payload.member);
+        else {
+          setMember(payload.member);
+          if (payload.member.currentMatch) {
+            setOpponentPlayerId(payload.member.currentMatch.opponentPlayerId);
+            setDiscipline(payload.member.currentMatch.discipline);
+          }
+        }
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) setLookupError("ไม่สามารถตรวจสอบสมาชิกได้ กรุณาลองสแกนใหม่");
       } finally {
@@ -109,6 +126,7 @@ export function StaffResultEntry({ playerId }: { playerId: string }) {
               <ShieldCheck size={26} />
             </section>
             <form className="staff-result-form" onSubmit={submitResult}>
+              {member.currentMatch ? <div className="staff-current-match"><Swords size={21} /><span><small>{member.currentMatch.tableLabel} • {member.currentMatch.discipline.toUpperCase()}</small><strong>{member.displayName} VS {member.currentMatch.opponentDisplayName}</strong></span></div> : null}
               <div className="staff-form-title"><span>1</span><div><strong>ระบุการแข่งขัน</strong><small>เลือกประเภทเกมและผลของสมาชิกคนนี้</small></div></div>
               <div className="staff-choice-grid" role="group" aria-label="ประเภทเกม">
                 <button className={discipline === "8-ball" ? "selected" : ""} type="button" onClick={() => setDiscipline("8-ball")}><span className="staff-ball ball-8">8</span>8-Ball</button>
@@ -123,7 +141,7 @@ export function StaffResultEntry({ playerId }: { playerId: string }) {
                 <span>–</span>
                 <label><span>คะแนนคู่แข่งขัน</span><input type="number" inputMode="numeric" min="0" max="99" value={opponentScore} onChange={(event) => setOpponentScore(Number(event.target.value))} required /></label>
               </div>
-              <label className="staff-field"><span>Player ID คู่แข่งขัน <small>(ถ้ามี)</small></span><div><IdCard size={19} /><input type="text" autoCapitalize="characters" value={opponentPlayerId} onChange={(event) => setOpponentPlayerId(event.target.value.toUpperCase().replace(/\s+/g, "").slice(0, 24))} placeholder="PB-2026-XXXXXX" /></div></label>
+              <label className="staff-field"><span>Player ID คู่แข่งขัน {member.currentMatch ? <small>(จากคิว Battle)</small> : <small>(ถ้ามี)</small>}</span><div><IdCard size={19} /><input type="text" autoCapitalize="characters" value={opponentPlayerId} onChange={(event) => setOpponentPlayerId(event.target.value.toUpperCase().replace(/\s+/g, "").slice(0, 24))} placeholder="PB-2026-XXXXXX" readOnly={Boolean(member.currentMatch)} required={Boolean(member.currentMatch)} /></div></label>
               <div className="staff-form-title"><span>2</span><div><strong>ยืนยันผู้รายงานผล</strong><small>ระบบจะเก็บรหัสพนักงานพร้อมวันและเวลา</small></div></div>
               <label className="staff-field"><span>รหัสประจำตัวพนักงาน</span><div><LockKeyhole size={19} /><input type="text" autoCapitalize="characters" autoComplete="off" minLength={3} maxLength={20} value={staffCode} onChange={(event) => setStaffCode(event.target.value.toUpperCase().replace(/\s+/g, ""))} placeholder="เช่น STAFF-001" required /></div></label>
               <div className="pending-score-note"><ShieldCheck size={20} /><span><strong>ผลจะอยู่สถานะรอตรวจสอบ</strong><small>ยังไม่เพิ่มคะแนน Ranking จนกว่าจะได้รับการยืนยัน</small></span></div>

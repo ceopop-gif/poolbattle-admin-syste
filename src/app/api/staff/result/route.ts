@@ -41,11 +41,20 @@ function isValidPlayerId(value: string) {
   return /^PB-\d{4}-[A-Z0-9]{4,12}$/.test(value);
 }
 
-function memberPayload(member: MemberRow) {
+type CurrentBattleMatch = {
+  tableId: string;
+  tableLabel: string;
+  discipline: "8-ball" | "9-ball";
+  opponentPlayerId: string;
+  opponentDisplayName: string;
+};
+
+function memberPayload(member: MemberRow, currentMatch: CurrentBattleMatch | null = null) {
   return {
     displayName: member.display_name,
     playerId: member.player_id,
     photoUrl: memberPhotoUrl(member.photo_key),
+    currentMatch,
   };
 }
 
@@ -74,7 +83,27 @@ export async function GET(request: Request) {
   const member = await db.prepare("SELECT * FROM members WHERE player_id = ? LIMIT 1").bind(playerId).first<MemberRow>();
   if (!member) return Response.json({ error: "ไม่พบสมาชิกจาก QR นี้" }, { status: 404 });
   if (member.status === "blocked") return Response.json({ error: "สมาชิกนี้ถูกระงับ กรุณาติดต่อ Admin" }, { status: 403 });
-  return Response.json({ member: memberPayload(member) });
+  const currentMatch = await db.prepare(`SELECT q.table_id, t.label AS table_label, q.discipline,
+    opponent.player_id AS opponent_player_id, opponent.display_name AS opponent_display_name
+    FROM admin_queue_tickets q
+    JOIN venue_tables t ON t.id = q.table_id
+    JOIN admin_queue_tickets other_q ON other_q.table_id = q.table_id AND other_q.id <> q.id AND other_q.queue_type = 'battle' AND other_q.status = 'playing'
+    JOIN members opponent ON opponent.id = other_q.member_id
+    WHERE q.member_id = ? AND q.queue_type = 'battle' AND q.status = 'playing'
+    ORDER BY q.updated_at DESC LIMIT 1`).bind(member.id).first<{
+      table_id: string;
+      table_label: string;
+      discipline: "8-ball" | "9-ball";
+      opponent_player_id: string;
+      opponent_display_name: string;
+    }>();
+  return Response.json({ member: memberPayload(member, currentMatch ? {
+    tableId: currentMatch.table_id,
+    tableLabel: currentMatch.table_label,
+    discipline: currentMatch.discipline,
+    opponentPlayerId: currentMatch.opponent_player_id,
+    opponentDisplayName: currentMatch.opponent_display_name,
+  } : null) });
 }
 
 export async function POST(request: Request) {
@@ -113,6 +142,22 @@ export async function POST(request: Request) {
   const member = await db.prepare("SELECT * FROM members WHERE player_id = ? LIMIT 1").bind(playerId).first<MemberRow>();
   if (!member) return Response.json({ error: "ไม่พบสมาชิกจาก QR นี้" }, { status: 404 });
   if (member.status === "blocked") return Response.json({ error: "สมาชิกนี้ถูกระงับ กรุณาติดต่อ Admin" }, { status: 403 });
+
+  const activeBattleMatch = await db.prepare(`SELECT q.table_id, q.discipline, opponent.player_id AS opponent_player_id
+    FROM admin_queue_tickets q
+    JOIN admin_queue_tickets other_q ON other_q.table_id = q.table_id AND other_q.id <> q.id AND other_q.queue_type = 'battle' AND other_q.status = 'playing'
+    JOIN members opponent ON opponent.id = other_q.member_id
+    WHERE q.member_id = ? AND q.queue_type = 'battle' AND q.status = 'playing'
+    ORDER BY q.updated_at DESC LIMIT 1`).bind(member.id).first<{ table_id: string; discipline: "8-ball" | "9-ball"; opponent_player_id: string }>();
+  if (activeBattleMatch && (!opponentPlayerId || opponentPlayerId !== activeBattleMatch.opponent_player_id || discipline !== activeBattleMatch.discipline)) {
+    return Response.json({ error: "คู่แข่งขันหรือประเภทเกมไม่ตรงกับคิว Battle ปัจจุบัน" }, { status: 409 });
+  }
+  if (activeBattleMatch) {
+    const pending = await db.prepare(`SELECT id FROM competition_result_submissions
+      WHERE status = 'result_submitted' AND ((player_id_snapshot = ? AND opponent_player_id = ?) OR (player_id_snapshot = ? AND opponent_player_id = ?)) LIMIT 1`)
+      .bind(playerId, opponentPlayerId, opponentPlayerId, playerId).first<{ id: string }>();
+    if (pending) return Response.json({ error: "คู่นี้ส่งผลแล้วและกำลังรอ Admin ตรวจสอบ" }, { status: 409 });
+  }
 
   const id = crypto.randomUUID();
   const submittedAt = new Date().toISOString();

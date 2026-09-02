@@ -1,6 +1,8 @@
 import { getBangkokCalendarDate } from "@/lib/member-access";
+import { BATTLE_LOSS_POINTS, BATTLE_WIN_POINTS } from "@/lib/battle-queue";
 import type { AdminActionResponse } from "@/lib/admin-types";
 import { getAdminDashboardData } from "@/lib/server/admin-data";
+import { getNextAvailableBattleCreditOrder } from "@/lib/server/battle-queue";
 import { getMemberStorage, type PreparedStatement } from "@/lib/server/member-storage";
 
 export const dynamic = "force-dynamic";
@@ -83,24 +85,77 @@ export async function POST(request: Request) {
       const decision = body?.decision === "confirm" ? "confirm" : body?.decision === "reject" ? "reject" : "";
       const reason = requireReason(body?.reason);
       if (!id || !decision || !reason) return bad("กรุณาเลือกผลและระบุเหตุผลอย่างน้อย 3 ตัวอักษร");
-      const result = await db.prepare("SELECT id, member_id, status, outcome, business_date FROM competition_result_submissions WHERE id = ? LIMIT 1").bind(id).first<{ id: string; member_id: string; status: string; outcome: string; business_date: string }>();
+      const result = await db.prepare("SELECT id, member_id, player_id_snapshot, opponent_player_id, discipline, status, outcome, business_date FROM competition_result_submissions WHERE id = ? LIMIT 1").bind(id).first<{ id: string; member_id: string; player_id_snapshot: string; opponent_player_id: string | null; discipline: string; status: string; outcome: string; business_date: string }>();
       if (!result) return bad("ไม่พบผลการแข่งขันนี้", 404);
       if (result.status !== "result_submitted") return bad("ผลการแข่งขันนี้ถูกตรวจสอบแล้ว", 409);
 
+      const opponent = result.opponent_player_id ? await db.prepare("SELECT id, player_id, display_name FROM members WHERE player_id = ? AND status = 'active' LIMIT 1").bind(result.opponent_player_id).first<{ id: string; player_id: string; display_name: string }>() : null;
+      const battleTickets = opponent ? (await db.prepare(`SELECT id, member_id, display_name, table_id, discipline FROM admin_queue_tickets
+        WHERE queue_type = 'battle' AND status = 'playing' AND member_id IN (?, ?) ORDER BY joined_at ASC`).bind(result.member_id, opponent.id).all<{ id: string; member_id: string; display_name: string; table_id: string; discipline: string }>()).results : [];
+      const submittedTicket = battleTickets.find((ticket) => ticket.member_id === result.member_id);
+      const opponentTicket = opponent ? battleTickets.find((ticket) => ticket.member_id === opponent.id) : null;
+      const isRankedBattle = Boolean(submittedTicket?.table_id && submittedTicket.table_id === opponentTicket?.table_id && submittedTicket.discipline === result.discipline);
       const nextStatus = decision === "confirm" ? "confirmed" : "rejected";
       const statements: PreparedStatement[] = [
         db.prepare("UPDATE competition_result_submissions SET status = ? WHERE id = ? AND status = 'result_submitted'").bind(nextStatus, id),
         db.prepare("INSERT INTO result_reviews (id, submission_id, action, reason, actor_code, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), id, decision, reason, ADMIN_ACTOR, createdAt),
         auditStatement(db, `result.${decision}`, "competition_result", id, reason, { status: result.status }, { status: nextStatus }, createdAt),
       ];
-      if (decision === "confirm" && result.outcome === "win") {
+      if (decision === "confirm" && isRankedBattle && opponent && submittedTicket && opponentTicket) {
+        const winnerMemberId = result.outcome === "win" ? result.member_id : opponent.id;
+        const loserMemberId = result.outcome === "win" ? opponent.id : result.member_id;
+        const winnerTicket = result.outcome === "win" ? submittedTicket : opponentTicket;
+        const loserTicket = result.outcome === "win" ? opponentTicket : submittedTicket;
+        const [winnerCredit, loserCredit, nextWaiting] = await Promise.all([
+          getNextAvailableBattleCreditOrder(db, winnerMemberId, now),
+          getNextAvailableBattleCreditOrder(db, loserMemberId, now),
+          db.prepare(`SELECT id, member_id, display_name FROM admin_queue_tickets
+            WHERE queue_type = 'battle' AND discipline = ? AND status = 'waiting' ORDER BY position ASC, joined_at ASC LIMIT 1`).bind(result.discipline).first<{ id: string; member_id: string; display_name: string }>(),
+        ]);
+        if (!winnerCredit || !loserCredit) return bad("ผู้แข่งขันอย่างน้อยหนึ่งคนไม่มีบัตรแข่งที่ยังใช้ได้ จึงยังยืนยันผลไม่ได้", 409);
+
+        for (const accountType of ["monthly", "lifetime"]) {
+          statements.push(
+            db.prepare("INSERT INTO point_ledger_entries (id, member_id, submission_id, account_type, point_type, points, business_date, created_at, reversal_of) VALUES (?, ?, ?, ?, 'ranked_battle_win', ?, ?, ?, NULL)")
+              .bind(crypto.randomUUID(), winnerMemberId, id, accountType, BATTLE_WIN_POINTS, result.business_date, createdAt),
+            db.prepare("INSERT INTO point_ledger_entries (id, member_id, submission_id, account_type, point_type, points, business_date, created_at, reversal_of) VALUES (?, ?, ?, ?, 'ranked_battle_loss', ?, ?, ?, NULL)")
+              .bind(crypto.randomUUID(), loserMemberId, id, accountType, BATTLE_LOSS_POINTS, result.business_date, createdAt),
+          );
+        }
+        statements.push(
+          db.prepare("INSERT INTO battle_game_credit_ledger (id, member_id, order_id, delta_games, entry_type, source_ref, created_at) VALUES (?, ?, ?, -1, 'ranked_battle_match', ?, ?)")
+            .bind(crypto.randomUUID(), winnerMemberId, winnerCredit.orderId, `ranked-result:${id}:${winnerMemberId}`, createdAt),
+          db.prepare("INSERT INTO battle_game_credit_ledger (id, member_id, order_id, delta_games, entry_type, source_ref, created_at) VALUES (?, ?, ?, -1, 'ranked_battle_match', ?, ?)")
+            .bind(crypto.randomUUID(), loserMemberId, loserCredit.orderId, `ranked-result:${id}:${loserMemberId}`, createdAt),
+          db.prepare("UPDATE admin_queue_tickets SET status = 'completed', updated_at = ? WHERE id = ? AND status = 'playing'").bind(createdAt, loserTicket.id),
+        );
+        if (nextWaiting) {
+          statements.push(
+            db.prepare("UPDATE admin_queue_tickets SET status = 'playing', table_id = ?, updated_at = ? WHERE id = ? AND status = 'waiting'").bind(winnerTicket.table_id, createdAt, nextWaiting.id),
+            db.prepare("UPDATE venue_tables SET status = 'occupied', current_player = ?, updated_at = ? WHERE id = ?").bind(`${winnerTicket.display_name} vs ${nextWaiting.display_name}`, createdAt, winnerTicket.table_id),
+          );
+        } else {
+          statements.push(
+            db.prepare("UPDATE admin_queue_tickets SET status = 'assigned', updated_at = ? WHERE id = ? AND status = 'playing'").bind(createdAt, winnerTicket.id),
+            db.prepare("UPDATE venue_tables SET status = 'occupied', current_player = ?, updated_at = ? WHERE id = ?").bind(winnerTicket.display_name, createdAt, winnerTicket.table_id),
+          );
+        }
+        statements.push(auditStatement(db, "ranked_battle.confirm", "queue_match", winnerTicket.table_id, reason, { submissionId: id }, {
+          winnerMemberId,
+          loserMemberId,
+          winnerPoints: BATTLE_WIN_POINTS,
+          loserPoints: BATTLE_LOSS_POINTS,
+          nextPlayerMemberId: nextWaiting?.member_id ?? null,
+        }, createdAt));
+      } else if (decision === "confirm" && result.outcome === "win") {
         for (const accountType of ["monthly", "lifetime"]) {
           statements.push(db.prepare("INSERT INTO point_ledger_entries (id, member_id, submission_id, account_type, point_type, points, business_date, created_at, reversal_of) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)")
             .bind(crypto.randomUUID(), result.member_id, id, accountType, "confirmed_match_win", 3, result.business_date, createdAt));
         }
       }
       await db.batch(statements);
-      return ok(decision === "confirm" ? "ยืนยันผลและบันทึกคะแนนแล้ว" : "ปฏิเสธผลการแข่งขันแล้ว");
+      if (decision === "reject") return ok("ปฏิเสธผลการแข่งขันแล้ว");
+      return ok(isRankedBattle ? `ยืนยันผลแล้ว ผู้ชนะ +${BATTLE_WIN_POINTS} ผู้แพ้ +${BATTLE_LOSS_POINTS} และผู้ชนะอยู่ต่อ` : "ยืนยันผลและบันทึกคะแนนแล้ว");
     }
 
     if (action === "member-status") {

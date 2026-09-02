@@ -107,8 +107,8 @@ export async function getAdminDashboardData(at = new Date()): Promise<AdminDashb
       db.prepare(`SELECT m.id AS member_id, m.display_name, m.player_id, m.photo_key,
         COALESCE((SELECT SUM(points) FROM point_ledger_entries p WHERE p.member_id = m.id AND p.account_type = 'monthly' AND substr(p.business_date, 1, 7) = ?), 0) AS monthly_points,
         COALESCE((SELECT SUM(points) FROM point_ledger_entries p WHERE p.member_id = m.id AND p.account_type = 'lifetime'), 0) AS lifetime_points,
-        (SELECT COUNT(*) FROM competition_result_submissions r WHERE r.member_id = m.id AND r.status = 'confirmed' AND r.outcome = 'win' AND substr(r.business_date, 1, 7) = ?) AS confirmed_wins,
-        (SELECT COUNT(*) FROM competition_result_submissions r WHERE r.member_id = m.id AND r.status = 'confirmed' AND r.outcome = 'loss' AND substr(r.business_date, 1, 7) = ?) AS confirmed_losses
+        (SELECT COUNT(*) FROM point_ledger_entries p WHERE p.member_id = m.id AND p.account_type = 'monthly' AND p.point_type = 'ranked_battle_win' AND substr(p.business_date, 1, 7) = ?) AS confirmed_wins,
+        (SELECT COUNT(*) FROM point_ledger_entries p WHERE p.member_id = m.id AND p.account_type = 'monthly' AND p.point_type = 'ranked_battle_loss' AND substr(p.business_date, 1, 7) = ?) AS confirmed_losses
         FROM members m WHERE m.status = 'active' ORDER BY monthly_points DESC, confirmed_wins DESC, m.joined_at ASC LIMIT 50`).bind(period, period, period)),
     allRows<{ id: string; period: string; entry_type: string; amount: number; source_ref: string; reason: string; actor_code: string; created_at: string }>(
       db.prepare("SELECT id, period, entry_type, amount, source_ref, reason, actor_code, created_at FROM reward_pool_entries ORDER BY created_at DESC LIMIT 60"),

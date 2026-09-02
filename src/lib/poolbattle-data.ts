@@ -29,7 +29,7 @@ export type MenuItem = {
 export const MAIN_MENU: MenuItem[] = [
   { id: "gate-pass", number: 1, title: "บัตรผ่านประตู", subtitle: "พร้อมเข้าสนามวันนี้", icon: IdCard, tone: "gold" },
   { id: "daily-pass", number: 2, title: "บัตรแข่งประจำวัน", subtitle: "8-Ball Battle • 19:00 น.", icon: CalendarCheck2, tone: "silver" },
-  { id: "free-queue", number: 3, title: "คิวเล่นฟรี", subtitle: "โต๊ะว่าง 2 โต๊ะ", icon: CircleCheckBig, tone: "green" },
+  { id: "free-queue", number: 3, title: "คิวเล่นฟรี", subtitle: "ดูคู่แข่งและตารางต่อคิว", icon: CircleCheckBig, tone: "green" },
   { id: "battle-queue", number: 4, title: "คิวแข่งขัน", subtitle: "แมตช์ถัดไป 20:30 น.", icon: Crosshair, tone: "battle" },
   { id: "events", number: 5, title: "กิจกรรมแข่ง", subtitle: "3 กิจกรรมที่กำลังเปิดรับ", icon: Trophy, tone: "gold" },
   { id: "margie", number: 6, title: "มารกี้", subtitle: "ผู้ช่วยส่วนตัว POOL BATTLE", icon: Trophy, tone: "gold" },

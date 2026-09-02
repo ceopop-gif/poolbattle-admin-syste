@@ -51,7 +51,8 @@ import {
   type PurchaseRecipient,
   type PurchaseResult,
 } from "@/lib/member-access";
-import { LEADERBOARD, MAIN_MENU, RECENT_MATCHES, type BottomTabId, type MenuItem } from "@/lib/poolbattle-data";
+import type { BattleQueueSnapshot, BattleRankingRow } from "@/lib/battle-queue";
+import { MAIN_MENU, type BottomTabId, type MenuItem } from "@/lib/poolbattle-data";
 
 type SettingsState = { lineNotifications: boolean; sound: boolean; queueAlerts: boolean };
 type PersistedState = { version: 1; features: FeatureState; settings: SettingsState };
@@ -128,18 +129,16 @@ function HomeScreen({
   );
 }
 
-function ScoresScreen() {
+function ScoresScreen({ ranking }: { ranking: BattleRankingRow | null }) {
+  const totalMatches = (ranking?.wins ?? 0) + (ranking?.losses ?? 0);
+  const winRate = totalMatches > 0 ? Math.round(((ranking?.wins ?? 0) / totalMatches) * 100) : 0;
   return (
     <section className="tab-screen">
       <div className="tab-title"><span>ประวัติการแข่งขัน</span><h1>ผลคะแนนของฉัน</h1></div>
-      <div className="score-hero"><div><span>Monthly Points</span><strong>86</strong><small><Flame size={14} /> เพิ่มขึ้น 12 คะแนนในสัปดาห์นี้</small></div><div className="score-ring"><span>ชนะ</span><strong>67%</strong><small>20W • 10L</small></div></div>
-      <div className="metric-row"><div><Trophy size={21} /><span>แชมป์กลุ่ม</span><strong>4</strong></div><div><Target size={21} /><span>แข่งเดือนนี้</span><strong>7 วัน</strong></div><div><Medal size={21} /><span>อันดับ</span><strong>#7</strong></div></div>
-      <div className="content-heading"><h2>ผลการแข่งขันล่าสุด</h2><button type="button">ดูทั้งหมด</button></div>
-      <div className="match-list">
-        {RECENT_MATCHES.map((match) => (
-          <article key={`${match.opponent}-${match.score}`}><span className={`match-result ${match.result === "ชนะ" ? "win" : "loss"}`}>{match.result}</span><div><strong>พบ {match.opponent}</strong><span>{match.discipline} • ผลยืนยันแล้ว</span></div><div className="match-score"><strong>{match.score}</strong><span>{match.points} แต้ม</span></div></article>
-        ))}
-      </div>
+      <div className="score-hero"><div><span>Monthly Points</span><strong>{ranking?.points ?? 0}</strong><small><Flame size={14} /> ชนะ +20 • แพ้ +10</small></div><div className="score-ring"><span>ชนะ</span><strong>{winRate}%</strong><small>{ranking?.wins ?? 0}W • {ranking?.losses ?? 0}L</small></div></div>
+      <div className="metric-row"><div><Trophy size={21} /><span>ชนะ</span><strong>{ranking?.wins ?? 0}</strong></div><div><Target size={21} /><span>แข่งเดือนนี้</span><strong>{totalMatches}</strong></div><div><Medal size={21} /><span>อันดับ</span><strong>{ranking ? `#${ranking.rank}` : "—"}</strong></div></div>
+      <div className="content-heading"><h2>กติกาคะแนน Battle</h2></div>
+      <div className="score-rules-note"><ShieldCheck size={22} /><span><strong>คิดคะแนนหลัง Admin ยืนยันผล</strong><small>ผู้ชนะรับ 20 คะแนน • ผู้แพ้รับ 10 คะแนน • สะสมใน Ranking รายเดือน</small></span></div>
     </section>
   );
 }
@@ -155,16 +154,16 @@ function OrderScreen() {
   );
 }
 
-function RankingScreen() {
+function RankingScreen({ ranking, currentPlayerId }: { ranking: BattleRankingRow[]; currentPlayerId: string }) {
   return (
     <section className="tab-screen">
       <div className="tab-title inline-title"><div><span>กันยายน 2569</span><h1>Battle Ranking</h1></div><button type="button" aria-label="กรองอันดับ"><SlidersHorizontal size={19} /></button></div>
       <div className="pool-strip"><div><Crown size={25} /><span>กองรางวัลเดือนนี้<strong>฿50,000</strong></span></div><small>Top 5 รับรางวัล</small></div>
       <div className="eligibility-progress"><div><span>สิทธิ์รับรางวัลของคุณ</span><strong>ผ่าน 3/4 เงื่อนไข</strong></div><div className="progress-track"><i /></div><p><CheckCircle2 size={15} /> แข่ง 7 วัน <CheckCircle2 size={15} /> 12 กลุ่ม <CheckCircle2 size={15} /> ยืนยันตัวตน</p></div>
       <div className="leaderboard"><div className="leaderboard-head"><span>อันดับ</span><span>ผู้เล่น</span><span>คะแนน</span></div>
-        {LEADERBOARD.map((player) => (
-          <article className={player.name === "ดร.ป็อบ" ? "me" : ""} key={player.rank}><span className={`rank-badge rank-${player.rank}`}>{player.rank}</span><div className="rank-player"><span>{player.name.charAt(0)}</span><p><strong>{player.name}</strong><small>ชนะ {player.wins} • {player.eligible ? "มีสิทธิ์" : "รอตรวจสอบ"}</small></p></div><div className="rank-score"><strong>{player.points}</strong><small>{player.prize !== "—" ? `฿${player.prize}` : player.prize}</small></div></article>
-        ))}
+        {ranking.length ? ranking.map((player) => (
+          <article className={player.playerId === currentPlayerId ? "me" : ""} key={player.playerId}><span className={`rank-badge rank-${player.rank}`}>{player.rank}</span><div className="rank-player"><Image src={player.photoUrl} alt="" width={35} height={35} unoptimized /><p><strong>{player.displayName}</strong><small>ชนะ {player.wins} • แพ้ {player.losses}</small></p></div><div className="rank-score"><strong>{player.points}</strong><small>คะแนน</small></div></article>
+        )) : <div className="ranking-empty">ยังไม่มีผลการแข่งขันที่ยืนยันแล้ว</div>}
       </div>
     </section>
   );
@@ -221,9 +220,18 @@ export function PoolBattleApp() {
   const [passClock, setPassClock] = useState(() => Date.now());
   const [news, setNews] = useState<MemberNewsItem[]>([]);
   const [battleCredits, setBattleCredits] = useState<BattleCreditSummary>(DEFAULT_BATTLE_CREDITS);
+  const [battleQueue, setBattleQueue] = useState<BattleQueueSnapshot | null>(null);
+  const [battleQueueBusy, setBattleQueueBusy] = useState(false);
   const previousBusinessDateRef = useRef(getBangkokBusinessDate(new Date(passClock)));
   const { playTap, playSuccess } = useUiSound(settings.sound);
   const currentMember = memberAccess.members.find((member) => member.phone === memberAccess.sessionPhone) ?? null;
+  const currentRanking = battleQueue?.ranking.find((player) => player.playerId === currentMember?.playerId) ?? null;
+
+  const refreshBattleQueue = useCallback(async (phone: string, signal?: AbortSignal) => {
+    const response = await fetch(`/api/battle-queue?phone=${encodeURIComponent(phone)}`, { cache: "no-store", signal });
+    if (!response.ok) return;
+    setBattleQueue(await response.json() as BattleQueueSnapshot);
+  }, []);
 
   const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.target instanceof Element && event.target.closest("button")) playTap();
@@ -256,6 +264,18 @@ export function PoolBattleApp() {
       .catch(() => undefined);
     return () => { active = false; };
   }, [currentMember]);
+
+  useEffect(() => {
+    if (!currentMember) return;
+    const controller = new AbortController();
+    const initialRefresh = window.setTimeout(() => void refreshBattleQueue(currentMember.phone, controller.signal).catch(() => undefined), 0);
+    const interval = window.setInterval(() => void refreshBattleQueue(currentMember.phone, controller.signal).catch(() => undefined), 10_000);
+    return () => {
+      controller.abort();
+      window.clearTimeout(initialRefresh);
+      window.clearInterval(interval);
+    };
+  }, [currentMember, refreshBattleQueue]);
 
   useEffect(() => {
     if (!toast) return;
@@ -301,13 +321,13 @@ export function PoolBattleApp() {
   const screen = useMemo(() => {
     if (!currentMember) return null;
     switch (activeTab) {
-      case "scores": return <ScoresScreen />;
+      case "scores": return <ScoresScreen ranking={currentRanking} />;
       case "order": return <OrderScreen />;
-      case "ranking": return <RankingScreen />;
+      case "ranking": return <RankingScreen ranking={battleQueue?.ranking ?? []} currentPlayerId={currentMember.playerId} />;
       case "settings": return <SettingsScreen member={currentMember} settings={settings} onToggle={(key) => setSettings((current) => ({ ...current, [key]: !current[key] }))} onEditProfile={() => setProfileSheetOpen(true)} onLogout={() => { setLoginPhone(currentMember.phone); setMemberAccess((current) => ({ ...current, sessionPhone: null })); }} />;
       case "home": return <HomeScreen member={currentMember} memberPass={memberPass} currentTime={passClock} roundTicketCount={currentRoundTickets.length} onOpen={setOpenItem} onBuyPass={() => setTicketSheetOpen(true)} news={news} />;
     }
-  }, [activeTab, currentMember, currentRoundTickets.length, memberPass, news, passClock, settings]);
+  }, [activeTab, battleQueue, currentMember, currentRanking, currentRoundTickets.length, memberPass, news, passClock, settings]);
 
   function completeMemberLogin(phone: string, payload: MemberSessionPayload, message: string) {
     if (!payload.member) return payload.error ?? "ไม่สามารถเข้าสู่ระบบได้ กรุณาลองอีกครั้ง";
@@ -397,6 +417,25 @@ export function PoolBattleApp() {
     return result;
   }
 
+  async function updateBattleQueue(action: "join" | "cancel", discipline: "8-ball" | "9-ball" = "8-ball") {
+    if (!currentMember) throw new Error("ไม่พบบัญชีสมาชิก");
+    setBattleQueueBusy(true);
+    try {
+      const response = await fetch("/api/battle-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, discipline, phone: currentMember.phone }),
+      });
+      const payload = await response.json() as BattleQueueSnapshot & { error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? "ไม่สามารถอัปเดตคิวได้ กรุณาลองอีกครั้ง");
+      setBattleQueue(payload);
+      playSuccess();
+      setToast(payload.message ?? (action === "join" ? "รับคิว Battle แล้ว" : "ยกเลิกคิวแล้ว"));
+    } finally {
+      setBattleQueueBusy(false);
+    }
+  }
+
   async function handleProfilePhotoUpdate(photo: Blob, password: string) {
     if (!currentMember) return "ไม่พบบัญชีสมาชิก";
     const formData = new FormData();
@@ -442,7 +481,7 @@ export function PoolBattleApp() {
         {currentMember ? <div className="screen-content" data-tab={activeTab} key={activeTab}>{screen}</div> : <LoginScreen key={loginPhone || "member-login"} initialPhone={loginPhone} onCheckPhone={handleCheckPhone} onLogin={handleLogin} onSetPassword={handleSetPassword} onBuy={() => setTicketSheetOpen(true)} />}
         {currentMember ? <BottomNav activeTab={activeTab} onChange={setActiveTab} /> : null}
       </main>
-      {openItem && currentMember ? <FeatureSheet item={openItem} state={features} member={currentMember} dayPass={memberPass} battleCredits={battleCredits} onClose={() => setOpenItem(null)} onPurchaseBattleGames={handleBattleTicketPurchase} onAction={handleFeatureAction} /> : null}
+      {openItem && currentMember ? <FeatureSheet item={openItem} state={features} member={currentMember} dayPass={memberPass} battleCredits={battleCredits} battleQueue={battleQueue} battleQueueBusy={battleQueueBusy} onClose={() => setOpenItem(null)} onPurchaseBattleGames={handleBattleTicketPurchase} onJoinBattleQueue={(discipline) => updateBattleQueue("join", discipline)} onCancelBattleQueue={() => updateBattleQueue("cancel")} onAction={handleFeatureAction} /> : null}
       {ticketSheetOpen ? <TicketPurchaseSheet members={memberAccess.members} currentTime={passClock} onClose={() => setTicketSheetOpen(false)} onPurchase={handleTicketPurchase} onUseMember={handleUseMember} /> : null}
       {profileSheetOpen && currentMember ? <MemberProfileSheet member={currentMember} onClose={() => setProfileSheetOpen(false)} onSave={handleProfilePhotoUpdate} /> : null}
       {toast ? <div className="toast" role="status"><CheckCircle2 size={19} />{toast}</div> : null}

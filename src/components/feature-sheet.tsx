@@ -5,6 +5,7 @@ import { useState } from "react";
 import { MemberQrCode } from "@/components/member-qr-code";
 import { EVENTS } from "@/lib/poolbattle-data";
 import type { MainFeatureId, MenuItem } from "@/lib/poolbattle-data";
+import type { BattleQueuePlayer, BattleQueueSnapshot } from "@/lib/battle-queue";
 import { BATTLE_GAME_VALIDITY_DAYS, MINIMUM_BATTLE_GAMES, formatThaiBattleTicketExpiry, formatThaiDayPassExpiry, getThaiDoorDate, type BattleCreditSummary, type BattleTicketPurchaseResult, type DayPassTicket, type PoolBattleMember } from "@/lib/member-access";
 import {
   BellRing,
@@ -40,8 +41,12 @@ type FeatureSheetProps = {
   member: PoolBattleMember;
   dayPass: DayPassTicket | null;
   battleCredits: BattleCreditSummary;
+  battleQueue: BattleQueueSnapshot | null;
+  battleQueueBusy: boolean;
   onClose: () => void;
   onPurchaseBattleGames: (games: number) => Promise<BattleTicketPurchaseResult>;
+  onJoinBattleQueue: (discipline: "8-ball" | "9-ball") => Promise<void>;
+  onCancelBattleQueue: () => Promise<void>;
   onAction: (action: "queue" | "register" | "ready" | "notify", message: string) => void;
 };
 
@@ -134,27 +139,102 @@ function DailyPass({ registered, onRegister }: { registered: boolean; onRegister
   );
 }
 
-function FreeQueue({ joined, onToggle }: { joined: boolean; onToggle: () => void }) {
+function QueuePlayerIdentity({ player }: { player: BattleQueuePlayer }) {
+  return (
+    <div className="battle-live-player">
+      <Image src={player.photoUrl} alt={`รูปสมาชิก ${player.displayName}`} width={62} height={62} unoptimized />
+      <span><strong>{player.displayName}</strong><small>{player.playerId}</small></span>
+    </div>
+  );
+}
+
+function RankedBattleQueue({
+  snapshot,
+  credits,
+  dayPass,
+  busy,
+  onJoin,
+  onCancel,
+  onPurchase,
+}: {
+  snapshot: BattleQueueSnapshot | null;
+  credits: BattleCreditSummary;
+  dayPass: DayPassTicket | null;
+  busy: boolean;
+  onJoin: FeatureSheetProps["onJoinBattleQueue"];
+  onCancel: FeatureSheetProps["onCancelBattleQueue"];
+  onPurchase: FeatureSheetProps["onPurchaseBattleGames"];
+}) {
+  const [discipline, setDiscipline] = useState<"8-ball" | "9-ball">("8-ball");
+  const [error, setError] = useState<string | null>(null);
+  const currentTicket = snapshot?.currentTicket ?? null;
+
+  async function run(action: () => Promise<void>) {
+    setError(null);
+    try {
+      await action();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "ไม่สามารถอัปเดตคิวได้ กรุณาลองอีกครั้ง");
+    }
+  }
+
   return (
     <div className="sheet-stack">
-      {joined ? (
-        <>
-          <div className="queue-position-card"><span>คิวของคุณ</span><strong>3</strong><small>มีผู้เล่นก่อนหน้า 2 คิว</small></div>
-          <div className="queue-timeline">
-            <div className="timeline-row active"><CheckCircle2 /><div><strong>รับคิวแล้ว</strong><span>18:45 น.</span></div></div>
-            <div className="timeline-row"><BellRing /><div><strong>รอเรียกคิว</strong><span>ประมาณ 18 นาที</span></div></div>
-            <div className="timeline-row"><Swords /><div><strong>เริ่มเล่น</strong><span>ระบบจะแจ้งโต๊ะให้อัตโนมัติ</span></div></div>
-          </div>
-          <button className="secondary-action danger" type="button" onClick={onToggle}>ยกเลิกคิว</button>
-        </>
-      ) : (
-        <>
-          <div className="availability-card"><span className="availability-icon"><CheckCircle2 size={30} /></span><div><strong>พร้อมรับคิว</strong><span>โต๊ะมาตรฐานว่าง 2 โต๊ะ</span></div></div>
-          <div className="choice-row"><span><Swords size={19} /> 8-Ball</span><span className="selected">เลือกแล้ว</span></div>
-          <div className="choice-row"><span><UsersRound size={19} /> เล่นร่วมกับสมาชิก</span><ChevronRight size={18} /></div>
-          <button className="primary-action" type="button" onClick={onToggle}>รับคิวเล่นฟรี</button>
-        </>
-      )}
+      <section className="battle-rule-strip" aria-label="กติกาคะแนน Battle">
+        <div><Trophy size={20} /><span>ชนะ<strong>+{snapshot?.rules.winPoints ?? 20}</strong></span></div>
+        <div><Swords size={20} /><span>แพ้<strong>+{snapshot?.rules.lossPoints ?? 10}</strong></span></div>
+        <div><UserRoundCheck size={20} /><span>กติกา<strong>ผู้ชนะอยู่ต่อ</strong></span></div>
+      </section>
+
+      <section className="battle-live-section">
+        <header><span><i /> LIVE NOW</span><strong>กำลังแข่งขัน</strong></header>
+        {!snapshot ? <div className="battle-queue-loading"><LoaderCircle className="spin" size={24} /> กำลังโหลดคิว</div> : snapshot.matches.length === 0 ? <div className="battle-empty-match"><Swords size={31} /><strong>ยังไม่มีคู่แข่งขัน</strong><span>เข้าคิวเพื่อเริ่มคู่แรกได้เลย</span></div> : snapshot.matches.map((match) => (
+          <article className="battle-live-match" key={match.tableId}>
+            <div className="battle-live-meta"><span>{match.tableLabel}</span><small>{match.discipline.toUpperCase()}</small></div>
+            <div className="battle-live-versus">
+              <QueuePlayerIdentity player={match.playerOne} />
+              <b>VS</b>
+              {match.playerTwo ? <QueuePlayerIdentity player={match.playerTwo} /> : <div className="battle-await-player"><UsersRound size={25} /><span>รอคู่แข่งขัน</span></div>}
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="battle-waiting-section">
+        <header><div><span>คิวต่อไป</span><strong>{snapshot?.waiting.length ?? 0} คน</strong></div><small>เรียงตามเวลาที่กดเข้าคิว</small></header>
+        {snapshot?.waiting.length ? <div className="battle-waiting-list">{snapshot.waiting.map((player, index) => (
+          <article className={currentTicket?.ticketId === player.ticketId ? "is-me" : ""} key={player.ticketId}>
+            <b>{index + 1}</b><Image src={player.photoUrl} alt="" width={42} height={42} unoptimized /><span><strong>{player.displayName}</strong><small>{player.discipline.toUpperCase()} • {player.playerId}</small></span>{currentTicket?.ticketId === player.ticketId ? <em>คุณ</em> : null}
+          </article>
+        ))}</div> : <div className="battle-no-waiting"><CheckCircle2 size={19} /> ยังไม่มีคนรอคิว</div>}
+      </section>
+
+      <section className="battle-member-action">
+        <div className="battle-credit-inline"><TicketCheck size={21} /><span><small>บัตรแข่งคงเหลือ</small><strong>{credits.availableGames} เกม</strong></span></div>
+        {currentTicket ? (
+          <>
+            <div className={`battle-my-status status-${currentTicket.status}`}>
+              <span>{currentTicket.status === "playing" ? "กำลังแข่งขัน" : currentTicket.status === "assigned" ? "รอคู่แข่งขัน" : "คิวของคุณ"}</span>
+              <strong>{currentTicket.status === "waiting" ? `ลำดับ ${Math.max(1, (snapshot?.waiting.findIndex((player) => player.ticketId === currentTicket.ticketId) ?? 0) + 1)}` : currentTicket.tableLabel ?? "กำลังจัดโต๊ะ"}</strong>
+            </div>
+            {currentTicket.status !== "playing" ? <button className="secondary-action danger" type="button" disabled={busy} onClick={() => void run(onCancel)}>{busy ? <LoaderCircle className="spin" size={19} /> : <X size={19} />} ยกเลิกคิว</button> : <p className="battle-playing-help">เมื่อแข่งจบ ให้พนักงานสแกน QR จากบัตรสมาชิกเพื่อส่งผล</p>}
+          </>
+        ) : (
+          <>
+            <div className="battle-discipline-choice" role="group" aria-label="เลือกประเภทเกม">
+              <button type="button" className={discipline === "8-ball" ? "selected" : ""} onClick={() => setDiscipline("8-ball")}>8-Ball</button>
+              <button type="button" className={discipline === "9-ball" ? "selected" : ""} onClick={() => setDiscipline("9-ball")}>9-Ball</button>
+            </div>
+            <button className="primary-action" type="button" disabled={busy || !dayPass || credits.availableGames < 1} onClick={() => void run(() => onJoin(discipline))}>
+              {busy ? <><LoaderCircle className="spin" size={20} /> กำลังรับคิว</> : <><Swords size={20} /> เข้าคิวเล่นฟรี</>}
+            </button>
+            {!dayPass ? <p className="battle-action-warning">ต้องมีบัตรเข้ารอบปัจจุบันก่อนเข้าคิว</p> : credits.availableGames < 1 ? <p className="battle-action-warning">ซื้อบัตรแข่งขั้นต่ำ 5 เกมก่อนเข้าคิว</p> : <p className="battle-action-helper">ระบบจะหัก 1 เกมต่อคนเมื่อ Admin ยืนยันผลแล้ว</p>}
+          </>
+        )}
+        {error ? <p className="form-error" role="alert">{error}</p> : null}
+      </section>
+
+      {credits.availableGames < 1 ? <BattleTicketCard credits={credits} onPurchase={onPurchase} /> : null}
     </div>
   );
 }
@@ -201,25 +281,25 @@ function Margie({ onQuickAction }: { onQuickAction: (message: string) => void })
   );
 }
 
-function SheetContent({ id, state, member, dayPass, battleCredits, onPurchaseBattleGames, onAction }: { id: MainFeatureId; state: FeatureState; member: PoolBattleMember; dayPass: DayPassTicket | null; battleCredits: BattleCreditSummary; onPurchaseBattleGames: FeatureSheetProps["onPurchaseBattleGames"]; onAction: FeatureSheetProps["onAction"] }) {
+function SheetContent({ id, state, member, dayPass, battleCredits, battleQueue, battleQueueBusy, onPurchaseBattleGames, onJoinBattleQueue, onCancelBattleQueue, onAction }: { id: MainFeatureId; state: FeatureState; member: PoolBattleMember; dayPass: DayPassTicket | null; battleCredits: BattleCreditSummary; battleQueue: BattleQueueSnapshot | null; battleQueueBusy: boolean; onPurchaseBattleGames: FeatureSheetProps["onPurchaseBattleGames"]; onJoinBattleQueue: FeatureSheetProps["onJoinBattleQueue"]; onCancelBattleQueue: FeatureSheetProps["onCancelBattleQueue"]; onAction: FeatureSheetProps["onAction"] }) {
   switch (id) {
     case "gate-pass": return <GatePass member={member} dayPass={dayPass} battleCredits={battleCredits} onPurchaseBattleGames={onPurchaseBattleGames} />;
     case "daily-pass": return <DailyPass registered={state.competitionRegistered} onRegister={() => onAction("register", "สมัคร 8-Ball Daily Battle เรียบร้อยแล้ว")} />;
-    case "free-queue": return <FreeQueue joined={state.queueJoined} onToggle={() => onAction("queue", state.queueJoined ? "ยกเลิกคิวแล้ว" : "รับคิวเล่นฟรีเรียบร้อย คิวที่ 3")} />;
+    case "free-queue": return <RankedBattleQueue snapshot={battleQueue} credits={battleCredits} dayPass={dayPass} busy={battleQueueBusy} onJoin={onJoinBattleQueue} onCancel={onCancelBattleQueue} onPurchase={onPurchaseBattleGames} />;
     case "battle-queue": return <BattleQueue ready={state.battleReady} onReady={() => onAction("ready", "ยืนยันพร้อมแข่งเรียบร้อยแล้ว")} />;
     case "events": return <EventList onNotify={(name) => onAction("notify", `เปิดแจ้งเตือน ${name} แล้ว`)} />;
     case "margie": return <Margie onQuickAction={(message) => onAction("notify", `มารกี้กำลังช่วย: ${message}`)} />;
   }
 }
 
-export function FeatureSheet({ item, state, member, dayPass, battleCredits, onClose, onPurchaseBattleGames, onAction }: FeatureSheetProps) {
+export function FeatureSheet({ item, state, member, dayPass, battleCredits, battleQueue, battleQueueBusy, onClose, onPurchaseBattleGames, onJoinBattleQueue, onCancelBattleQueue, onAction }: FeatureSheetProps) {
   return (
     <div className="sheet-layer" role="presentation">
       <button className="sheet-backdrop" type="button" onClick={onClose} aria-label="ปิดหน้าต่าง" />
       <section className="feature-sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
         <div className="sheet-handle" aria-hidden="true" />
         <header className="sheet-header"><div><span>เมนู {item.number}</span><h2 id="sheet-title">{item.title}</h2></div><button type="button" onClick={onClose} aria-label="ปิด"><X size={22} /></button></header>
-        <div className="sheet-body"><SheetContent id={item.id} state={state} member={member} dayPass={dayPass} battleCredits={battleCredits} onPurchaseBattleGames={onPurchaseBattleGames} onAction={onAction} /></div>
+        <div className="sheet-body"><SheetContent id={item.id} state={state} member={member} dayPass={dayPass} battleCredits={battleCredits} battleQueue={battleQueue} battleQueueBusy={battleQueueBusy} onPurchaseBattleGames={onPurchaseBattleGames} onJoinBattleQueue={onJoinBattleQueue} onCancelBattleQueue={onCancelBattleQueue} onAction={onAction} /></div>
       </section>
     </div>
   );
